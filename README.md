@@ -6,6 +6,7 @@ A React + WXT browser extension that helps users quickly find the earliest commi
 
 - Works on GitHub repository pages (`owner/repo`)
 - One-click "Find First Commit" from an in-page widget
+- Index Grid mode: shows commit indexes from oldest to newest, click index to jump
 - Shows earliest commit SHA, author, date, summary, and direct link
 - Copy SHA button
 - Optional GitHub token in popup settings to avoid API rate-limit issues

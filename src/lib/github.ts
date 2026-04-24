@@ -23,7 +23,8 @@ interface CacheEntry {
   result: CommitInfo;
 }
 
-const memoryCache = new Map<string, CacheEntry>();
+const firstCommitCache = new Map<string, CacheEntry>();
+const commitCountCache = new Map<string, { expiresAt: number; total: number }>();
 
 function cacheKey(repo: RepoInfo, branch: string): string {
   return `${repo.owner}/${repo.repo}:${branch}`;
@@ -34,6 +35,16 @@ function parseLastPage(linkHeader: string | null): number | null {
   const lastMatch = linkHeader.match(/&page=(\d+)>;\s*rel="last"/);
   if (!lastMatch) return null;
   return Number(lastMatch[1]);
+}
+
+function toCommitInfo(commit: any): CommitInfo {
+  return {
+    sha: commit.sha,
+    message: commit.commit?.message?.split('\n')[0] ?? '(no message)',
+    author: commit.commit?.author?.name ?? 'Unknown',
+    date: commit.commit?.author?.date ?? '',
+    url: commit.html_url
+  };
 }
 
 async function fetchJson<T>(url: string, options: RequestOptions = {}): Promise<{ data: T; headers: Headers }> {
@@ -98,39 +109,79 @@ export async function getDefaultBranch(repo: RepoInfo, options: RequestOptions =
   return data.default_branch;
 }
 
-export async function findFirstCommit(repo: RepoInfo, branch: string, options: RequestOptions = {}): Promise<CommitInfo> {
+export async function getCommitCount(repo: RepoInfo, branch: string, options: RequestOptions = {}): Promise<number> {
   const key = cacheKey(repo, branch);
   const now = Date.now();
-  const cached = memoryCache.get(key);
+  const cached = commitCountCache.get(key);
 
   if (cached && cached.expiresAt > now) {
-    return cached.result;
+    return cached.total;
   }
 
   const baseCommitsUrl = `${API_BASE}/repos/${repo.owner}/${repo.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=1`;
   const latest = await fetchJson<any[]>(baseCommitsUrl, options);
 
   if (latest.data.length === 0) {
-    throw new Error('No commits found on this branch.');
+    commitCountCache.set(key, { expiresAt: now + CACHE_TTL_MS, total: 0 });
+    return 0;
   }
 
   const lastPage = parseLastPage(latest.headers.get('link'));
-  const targetUrl = lastPage ? `${baseCommitsUrl}&page=${lastPage}` : baseCommitsUrl;
-  const oldest = await fetchJson<any[]>(targetUrl, options);
-  const commit = oldest.data[0];
+  const total = lastPage ?? latest.data.length;
 
-  const result: CommitInfo = {
-    sha: commit.sha,
-    message: commit.commit?.message?.split('\n')[0] ?? '(no message)',
-    author: commit.commit?.author?.name ?? 'Unknown',
-    date: commit.commit?.author?.date ?? '',
-    url: commit.html_url
-  };
+  commitCountCache.set(key, {
+    expiresAt: now + CACHE_TTL_MS,
+    total
+  });
 
-  memoryCache.set(key, {
+  return total;
+}
+
+export async function findFirstCommit(repo: RepoInfo, branch: string, options: RequestOptions = {}): Promise<CommitInfo> {
+  const key = cacheKey(repo, branch);
+  const now = Date.now();
+  const cached = firstCommitCache.get(key);
+
+  if (cached && cached.expiresAt > now) {
+    return cached.result;
+  }
+
+  const total = await getCommitCount(repo, branch, options);
+  if (total === 0) {
+    throw new Error('No commits found on this branch.');
+  }
+
+  const baseCommitsUrl = `${API_BASE}/repos/${repo.owner}/${repo.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=1`;
+  const oldest = await fetchJson<any[]>(`${baseCommitsUrl}&page=${total}`, options);
+  const result = toCommitInfo(oldest.data[0]);
+
+  firstCommitCache.set(key, {
     expiresAt: now + CACHE_TTL_MS,
     result
   });
 
   return result;
+}
+
+export async function findCommitByOldestIndex(
+  repo: RepoInfo,
+  branch: string,
+  oldestIndex: number,
+  options: RequestOptions = {}
+): Promise<{ total: number; commit: CommitInfo }> {
+  const total = await getCommitCount(repo, branch, options);
+
+  if (total === 0) {
+    throw new Error('No commits found on this branch.');
+  }
+
+  if (oldestIndex < 1 || oldestIndex > total) {
+    throw new Error(`Commit index out of range. Valid range: 1-${total}`);
+  }
+
+  const newestOrderedPage = total - oldestIndex + 1;
+  const url = `${API_BASE}/repos/${repo.owner}/${repo.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=1&page=${newestOrderedPage}`;
+  const { data } = await fetchJson<any[]>(url, options);
+
+  return { total, commit: toCommitInfo(data[0]) };
 }

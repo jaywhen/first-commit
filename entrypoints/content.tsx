@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { findFirstCommit, getDefaultBranch, parseRepoFromUrl, type CommitInfo } from '@/lib/github';
-import { getGithubToken } from '@/lib/storage';
+import { findFirstCommit, getDefaultBranch, parseRepoFromUrl, type CommitInfo } from '../src/lib/github';
+import { getGithubToken } from '../src/lib/storage';
 
 function formatDate(iso: string): string {
   if (!iso) return 'Unknown date';

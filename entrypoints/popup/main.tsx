@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { getGithubToken, setGithubToken } from '@/lib/storage';
+import { getGithubToken, setGithubToken } from '../../src/lib/storage';
 
 function Popup() {
   const [token, setToken] = useState('');

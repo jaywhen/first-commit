@@ -42,6 +42,7 @@ function App() {
   const [branch, setBranch] = useState<string>('');
   const [totalCommits, setTotalCommits] = useState<number>(0);
   const [gridPage, setGridPage] = useState(1);
+  const [pageInput, setPageInput] = useState('1');
   const [result, setResult] = useState<(CommitInfo & { branch: string }) | null>(null);
 
   useEffect(() => {
@@ -61,6 +62,10 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
   }, [prefs]);
+
+  useEffect(() => {
+    setPageInput(String(gridPage));
+  }, [gridPage]);
 
   useEffect(() => {
     if (mode === 'first' && !prefs.showFirstCommit && prefs.showIndexGrid) {
@@ -107,6 +112,7 @@ function App() {
       const total = await getCommitCount(repo, activeBranch, { token });
       setTotalCommits(total);
       setGridPage(1);
+      setPageInput('1');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -146,6 +152,20 @@ function App() {
   const pageCount = Math.max(1, Math.ceil(totalCommits / GRID_PAGE_SIZE));
   const startIndex = (gridPage - 1) * GRID_PAGE_SIZE + 1;
   const endIndex = Math.min(totalCommits, gridPage * GRID_PAGE_SIZE);
+
+  const jumpToPage = () => {
+    const parsed = Number.parseInt(pageInput.trim(), 10);
+    if (!Number.isFinite(parsed) || Number.isNaN(parsed)) {
+      setError('Please enter a valid page number.');
+      return;
+    }
+    if (parsed < 1 || parsed > pageCount) {
+      setError(`Page must be between 1 and ${pageCount}.`);
+      return;
+    }
+    setError(null);
+    setGridPage(parsed);
+  };
 
   const indexButtons = [];
   for (let i = startIndex; i <= endIndex; i += 1) {
@@ -213,29 +233,37 @@ function App() {
           )}
 
           {availableModes.length > 1 && (
-            <div style={styles.modeSwitch}>
+            <div role="tablist" aria-label="Modes" style={styles.modeSwitch}>
               {prefs.showFirstCommit && (
-                <button
-                  style={mode === 'first' ? styles.activeTab : styles.tab}
-                  onClick={() => setMode('first')}
-                  disabled={loading}
-                >
+                <label style={mode === 'first' ? styles.activeRadioCard : styles.radioCard}>
+                  <input
+                    type="radio"
+                    name="commit-finder-mode"
+                    checked={mode === 'first'}
+                    onChange={() => setMode('first')}
+                    disabled={loading}
+                    style={styles.radioInput}
+                  />
                   First Commit
-                </button>
+                </label>
               )}
               {prefs.showIndexGrid && (
-                <button
-                  style={mode === 'index' ? styles.activeTab : styles.tab}
-                  onClick={() => {
-                    setMode('index');
-                    if (!totalCommits) {
-                      void loadGridMeta();
-                    }
-                  }}
-                  disabled={loading}
-                >
+                <label style={mode === 'index' ? styles.activeRadioCard : styles.radioCard}>
+                  <input
+                    type="radio"
+                    name="commit-finder-mode"
+                    checked={mode === 'index'}
+                    onChange={() => {
+                      setMode('index');
+                      if (!totalCommits) {
+                        void loadGridMeta();
+                      }
+                    }}
+                    disabled={loading}
+                    style={styles.radioInput}
+                  />
                   Index Grid
-                </button>
+                </label>
               )}
             </div>
           )}
@@ -267,6 +295,22 @@ function App() {
                 </button>
                 <button style={styles.secondaryButton} disabled={loading} onClick={() => void loadGridMeta()}>
                   Load / Refresh
+                </button>
+              </div>
+              <div style={styles.actionsRow}>
+                <input
+                  type="text"
+                  value={pageInput}
+                  inputMode="numeric"
+                  placeholder={`1-${pageCount}`}
+                  onChange={(event) => setPageInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') jumpToPage();
+                  }}
+                  style={styles.pageInput}
+                />
+                <button style={styles.secondaryButton} disabled={loading} onClick={jumpToPage}>
+                  Go to Page
                 </button>
               </div>
               {totalCommits > 0 && <div style={styles.meta}>Showing {startIndex}-{endIndex}</div>}
@@ -355,7 +399,9 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#f6f8fa'
   },
   checkboxLabel: {
-    display: 'block',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
     fontSize: 12,
     marginTop: 6
   },
@@ -364,24 +410,31 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     marginBottom: 8
   },
-  tab: {
+  radioCard: {
     border: '1px solid #d0d7de',
     background: 'white',
     color: '#24292f',
     borderRadius: 8,
     padding: '8px 12px',
     fontSize: 13,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6
   },
-  activeTab: {
+  activeRadioCard: {
     border: '1px solid #1f6feb',
-    background: '#1f6feb',
-    color: 'white',
+    background: '#eaf2ff',
+    color: '#1f6feb',
     borderRadius: 8,
     padding: '8px 12px',
     fontSize: 13,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6
   },
+  radioInput: { margin: 0 },
   primaryButton: {
     border: '1px solid #1f6feb',
     background: '#1f6feb',
@@ -411,6 +464,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'white',
     padding: '6px 8px',
     cursor: 'pointer'
+  },
+  pageInput: {
+    border: '1px solid #d0d7de',
+    borderRadius: 6,
+    fontSize: 12,
+    padding: '6px 8px',
+    width: 90
   },
   grid: {
     display: 'grid',
